@@ -44,7 +44,7 @@ dbutils.widgets.text("schema", "knowledge_graph")
 dbutils.widgets.text("min_confidence", "0.0", "minimum triplet confidence to include (NULL confidence is kept)")
 dbutils.widgets.text("betweenness_k", "0", "pivot nodes for sampled betweenness; 0 = skip (NULL column)")
 dbutils.widgets.text("seed_entity_id", "", "(optional) seed entity for the SSSP/BFS demo; defaults to highest-degree entity")
-dbutils.widgets.text("exclude_source_agents", "graph_topology", "source_agents whose triplets are excluded from the input graph (comma-sep)")
+dbutils.widgets.text("exclude_source_agents", "graph_topology,ml_clustering,statistical_analysis", "source_agents whose triplets are excluded from the input graph (comma-sep)")
 
 CATALOG = dbutils.widgets.get("catalog").strip()
 SCHEMA = dbutils.widgets.get("schema").strip()

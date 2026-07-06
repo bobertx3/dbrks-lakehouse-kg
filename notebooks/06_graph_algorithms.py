@@ -48,7 +48,7 @@ dbutils.widgets.text("min_confidence", "0.0", "minimum triplet confidence to inc
 dbutils.widgets.text("max_driver_edges", "5000000", "hard stop: refuse to collect more edges than this to the driver")
 dbutils.widgets.text("betweenness_max_nodes", "50000", "skip betweenness entirely above this node count (writes NULL)")
 dbutils.widgets.text("betweenness_sample_k", "256", "number of pivot nodes for approximate betweenness")
-dbutils.widgets.text("exclude_source_agents", "graph_topology", "source_agents whose triplets are excluded from the input graph (comma-sep)")
+dbutils.widgets.text("exclude_source_agents", "graph_topology,ml_clustering,statistical_analysis", "source_agents whose triplets are excluded from the input graph (comma-sep)")
 
 CATALOG = dbutils.widgets.get("catalog").strip()
 SCHEMA = dbutils.widgets.get("schema").strip()
@@ -67,10 +67,12 @@ print("Output: " + FQ + ".entity_centrality, " + FQ + ".entity_communities")
 
 # MAGIC %md ## 1. Load the edge list to the driver
 # MAGIC
-# MAGIC Triplets produced by the pipeline's own graph-topology agent (community
-# MAGIC memberships, risk propagation) are excluded by default: they are *derived*
-# MAGIC meta-edges, and feeding them back in makes the meta-nodes dominate centrality
-# MAGIC instead of the real entities.
+# MAGIC By default only *structural* triplets (FK joins, shared attributes, LLM
+# MAGIC semantic links) feed the algorithms. The statistical, ML, and graph-topology
+# MAGIC agents emit entity→annotation edges (pattern nodes, behavioral clusters,
+# MAGIC community memberships) — feeding those back in makes the synthetic
+# MAGIC annotation nodes dominate centrality instead of the real entities. Clear
+# MAGIC `exclude_source_agents` to analyze the full annotated graph instead.
 
 # COMMAND ----------
 
