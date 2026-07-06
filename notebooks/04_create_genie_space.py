@@ -243,6 +243,11 @@ if EDGE_LABEL and "confidence" in edge_columns:
         ],
     })
 
+# Genie requires every id-keyed list to be sorted by id (like tables by identifier)
+sample_questions.sort(key=lambda x: x["id"])
+example_sqls.sort(key=lambda x: x["id"])
+instructions_block.sort(key=lambda x: x["id"])
+
 serialized_space = {
     "version": 2,
     "config": {"sample_questions": sample_questions},

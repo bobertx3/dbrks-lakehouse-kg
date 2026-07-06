@@ -48,10 +48,12 @@ dbutils.widgets.text("min_confidence", "0.0", "minimum triplet confidence to inc
 dbutils.widgets.text("max_driver_edges", "5000000", "hard stop: refuse to collect more edges than this to the driver")
 dbutils.widgets.text("betweenness_max_nodes", "50000", "skip betweenness entirely above this node count (writes NULL)")
 dbutils.widgets.text("betweenness_sample_k", "256", "number of pivot nodes for approximate betweenness")
+dbutils.widgets.text("exclude_source_agents", "graph_topology", "source_agents whose triplets are excluded from the input graph (comma-sep)")
 
 CATALOG = dbutils.widgets.get("catalog").strip()
 SCHEMA = dbutils.widgets.get("schema").strip()
 MIN_CONFIDENCE = float(dbutils.widgets.get("min_confidence"))
+EXCLUDE_AGENTS = [a.strip() for a in dbutils.widgets.get("exclude_source_agents").split(",") if a.strip()]
 MAX_DRIVER_EDGES = int(dbutils.widgets.get("max_driver_edges"))
 BETWEENNESS_MAX_NODES = int(dbutils.widgets.get("betweenness_max_nodes"))
 BETWEENNESS_SAMPLE_K = int(dbutils.widgets.get("betweenness_sample_k"))
@@ -64,6 +66,11 @@ print("Output: " + FQ + ".entity_centrality, " + FQ + ".entity_communities")
 # COMMAND ----------
 
 # MAGIC %md ## 1. Load the edge list to the driver
+# MAGIC
+# MAGIC Triplets produced by the pipeline's own graph-topology agent (community
+# MAGIC memberships, risk propagation) are excluded by default: they are *derived*
+# MAGIC meta-edges, and feeding them back in makes the meta-nodes dominate centrality
+# MAGIC instead of the real entities.
 
 # COMMAND ----------
 
@@ -72,6 +79,7 @@ from pyspark.sql import functions as F
 edges_sdf = (
     spark.table(GT)
     .where((F.col("confidence").isNull()) | (F.col("confidence") >= MIN_CONFIDENCE))
+    .where(~F.col("source_agent").isin(EXCLUDE_AGENTS) if EXCLUDE_AGENTS else F.lit(True))
     .select("subject_id", "subject_type", "object_id", "object_type")
     .where(F.col("subject_id").isNotNull() & F.col("object_id").isNotNull())
 )

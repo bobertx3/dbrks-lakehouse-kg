@@ -44,10 +44,12 @@ dbutils.widgets.text("schema", "knowledge_graph")
 dbutils.widgets.text("min_confidence", "0.0", "minimum triplet confidence to include (NULL confidence is kept)")
 dbutils.widgets.text("betweenness_k", "0", "pivot nodes for sampled betweenness; 0 = skip (NULL column)")
 dbutils.widgets.text("seed_entity_id", "", "(optional) seed entity for the SSSP/BFS demo; defaults to highest-degree entity")
+dbutils.widgets.text("exclude_source_agents", "graph_topology", "source_agents whose triplets are excluded from the input graph (comma-sep)")
 
 CATALOG = dbutils.widgets.get("catalog").strip()
 SCHEMA = dbutils.widgets.get("schema").strip()
 MIN_CONFIDENCE = float(dbutils.widgets.get("min_confidence"))
+EXCLUDE_AGENTS = [a.strip() for a in dbutils.widgets.get("exclude_source_agents").split(",") if a.strip()]
 BETWEENNESS_K = int(dbutils.widgets.get("betweenness_k"))
 SEED = dbutils.widgets.get("seed_entity_id").strip() or None
 
@@ -72,6 +74,7 @@ from pyspark.sql import functions as F
 edges_pd = (
     spark.table(GT)
     .where((F.col("confidence").isNull()) | (F.col("confidence") >= MIN_CONFIDENCE))
+    .where(~F.col("source_agent").isin(EXCLUDE_AGENTS) if EXCLUDE_AGENTS else F.lit(True))
     .where(F.col("subject_id").isNotNull() & F.col("object_id").isNotNull())
     .select("subject_id", "subject_type", "object_id", "object_type", "confidence")
     .toPandas()
