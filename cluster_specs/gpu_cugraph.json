@@ -1,0 +1,23 @@
+{
+  "cluster_name": "lakehouse-kg-cugraph",
+  "spark_version": "15.4.x-gpu-ml-scala2.12",
+  "node_type_id": "g6.4xlarge",
+  "driver_node_type_id": "g6.4xlarge",
+  "num_workers": 0,
+  "autotermination_minutes": 60,
+  "spark_conf": {
+    "spark.databricks.cluster.profile": "singleNode",
+    "spark.master": "local[*, 4]"
+  },
+  "custom_tags": {
+    "ResourceClass": "SingleNode",
+    "project": "lakehouse-kg-starter"
+  },
+  "aws_attributes": {
+    "first_on_demand": 1,
+    "availability": "ON_DEMAND",
+    "ebs_volume_count": 1,
+    "ebs_volume_type": "GENERAL_PURPOSE_SSD",
+    "ebs_volume_size": 200
+  }
+}
