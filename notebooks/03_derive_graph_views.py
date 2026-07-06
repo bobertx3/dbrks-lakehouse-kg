@@ -201,7 +201,7 @@ def khop_sql(view_name: str, walk_from: str, walk_to: str) -> str:
     """Build a fixed-hop k-hop view walking edges from `walk_from` to `walk_to`."""
     if EDGE_LABEL:
         h1_extra   = f",\n           ARRAY(CAST(e.{qid(EDGE_LABEL)} AS STRING)) AS predicates"
-        step_extra = f", array_append(p.predicates, CAST(e.{qid(EDGE_LABEL)} AS STRING))"
+        step_extra = f", array_append(p.predicates, CAST(e.{qid(EDGE_LABEL)} AS STRING)) AS predicates"
     else:
         h1_extra   = ""
         step_extra = ""
