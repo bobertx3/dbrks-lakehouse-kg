@@ -27,11 +27,20 @@
 # COMMAND ----------
 
 # MAGIC %pip install scikit-learn networkx openai -q
-# MAGIC %pip install -e /Workspace/Users/<your-user>/lakehouse-kg-starter --no-deps -q
 
 # COMMAND ----------
 
 dbutils.library.restartPython()
+
+# COMMAND ----------
+
+# Make the lakehouse_kg package importable from this repo checkout, wherever it lives
+import os
+import sys
+
+notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+repo_root = os.path.dirname(os.path.dirname(f"/Workspace{notebook_path}"))
+sys.path.insert(0, repo_root)
 
 # COMMAND ----------
 
@@ -70,6 +79,10 @@ print(f"LLM Agent: {'enabled' if enable_llm else 'disabled'} ({llm_endpoint})")
 print(f"ML Agent: {'enabled' if enable_ml else 'disabled'}")
 print(f"Graph Agent: {'enabled' if enable_graph else 'disabled'}")
 print(f"Min confidence: {min_confidence}")
+
+# COMMAND ----------
+
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
 
 # COMMAND ----------
 

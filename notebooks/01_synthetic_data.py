@@ -20,11 +20,20 @@
 # COMMAND ----------
 
 # MAGIC %pip install scikit-learn networkx -q
-# MAGIC %pip install -e /Workspace/Users/<your-user>/lakehouse-kg-starter --no-deps -q
 
 # COMMAND ----------
 
 dbutils.library.restartPython()
+
+# COMMAND ----------
+
+# Make the lakehouse_kg package importable from this repo checkout, wherever it lives
+import os
+import sys
+
+notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+repo_root = os.path.dirname(os.path.dirname(f"/Workspace{notebook_path}"))
+sys.path.insert(0, repo_root)
 
 # COMMAND ----------
 
@@ -54,6 +63,10 @@ print(f"Schema: {schema}")
 print(f"Customers: {n_customers:,}")
 print(f"Transactions: {n_transactions:,}")
 print(f"Fraud rate: {fraud_rate:.1%}")
+
+# COMMAND ----------
+
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
 
 # COMMAND ----------
 
