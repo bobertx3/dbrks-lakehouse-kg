@@ -72,25 +72,16 @@ class LLMSemanticAgent(BaseAgent):
         return self._parse_entity_triplets(response)
 
     def _call_llm(self, prompt: str) -> str:
-        """Call the Databricks foundation model endpoint via the OpenAI-compatible API."""
+        """Call the Databricks foundation model endpoint via the OpenAI-compatible API.
+
+        Auth and workspace URL come from the SDK's unified credential resolution
+        (notebook context, job context, serverless, env vars, or CLI profile),
+        so this works identically on classic clusters, serverless, and locally.
+        """
         try:
-            import openai
-            import os
+            from databricks.sdk import WorkspaceClient
 
-            workspace_url = (
-                os.environ.get("DATABRICKS_HOST", "")
-                or os.environ.get("SPARK_REMOTE", "").split(";")[0].replace("sc://", "https://")
-            ).rstrip("/")
-
-            token = (
-                os.environ.get("DATABRICKS_TOKEN", "")
-                or self._get_notebook_token()
-            )
-
-            client = openai.OpenAI(
-                api_key=token,
-                base_url=f"{workspace_url}/serving-endpoints",
-            )
+            client = WorkspaceClient().serving_endpoints.get_open_ai_client()
             response = client.chat.completions.create(
                 model=self.config.llm_endpoint,
                 messages=[
@@ -106,40 +97,25 @@ class LLMSemanticAgent(BaseAgent):
             return self._call_llm_sdk_fallback(prompt)
 
     def _call_llm_sdk_fallback(self, prompt: str) -> str:
-        """Fallback: call via Databricks SDK (handles dict/object response formats)."""
+        """Fallback: query the endpoint through the SDK's typed serving API."""
         try:
             from databricks.sdk import WorkspaceClient
+            from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
 
             w = WorkspaceClient()
             response = w.serving_endpoints.query(
                 name=self.config.llm_endpoint,
                 messages=[
-                    {"role": "system", "content": self.domain.llm_system_prompt},
-                    {"role": "user", "content": prompt},
+                    ChatMessage(role=ChatMessageRole.SYSTEM, content=self.domain.llm_system_prompt),
+                    ChatMessage(role=ChatMessageRole.USER, content=prompt),
                 ],
                 max_tokens=self.config.llm_max_tokens,
                 temperature=self.config.llm_temperature,
             )
-            return self._extract_content(response)
+            return response.choices[0].message.content or "[]"
         except Exception as e:
             self.logger.error(f"SDK fallback also failed: {e}")
             return "[]"
-
-    @staticmethod
-    def _extract_content(response) -> str:
-        """Extract content from a serving endpoint response (handles both dict and object)."""
-        if isinstance(response, dict):
-            return response["choices"][0]["message"]["content"]
-        return response.choices[0].message.content
-
-    @staticmethod
-    def _get_notebook_token() -> str:
-        """Retrieve the auth token from notebook context when running on Databricks."""
-        try:
-            from dbruntime.databricks_repl_context import get_context
-            return get_context().apiToken
-        except Exception:
-            return ""
 
     def _build_schema_summary(self, schemas: dict) -> str:
         lines = []

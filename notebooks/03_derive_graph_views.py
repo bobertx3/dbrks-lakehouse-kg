@@ -42,7 +42,7 @@ dbutils.widgets.text("edge_label_col",  "predicate",    "Edge table: label colum
 dbutils.widgets.text("src_type_col",    "subject_type", "Edge table: source-type column (used when deriving nodes; blank if none)")
 dbutils.widgets.text("dst_type_col",    "object_type",  "Edge table: dest-type column (used when deriving nodes; blank if none)")
 dbutils.widgets.text("node_id_col",     "id",           "Node table: id column (only used when node_table is set)")
-dbutils.widgets.text("max_hops",        "5",            "Traversal depth for downstream/upstream views")
+dbutils.widgets.text("max_hops",        "3",            "Traversal depth for downstream/upstream views")
 
 EDGE_TABLE  = dbutils.widgets.get("edge_table")
 NODE_TABLE  = dbutils.widgets.get("node_table").strip()
@@ -184,49 +184,50 @@ print(f"Created {OUT_NS}.edges_enriched")
 
 # COMMAND ----------
 
-# MAGIC %md ## 4. `downstream_khop` and `upstream_khop` — recursive traversal
+# MAGIC %md ## 4. `downstream_khop` and `upstream_khop` — fixed-hop traversal
 # MAGIC
-# MAGIC Recursive CTEs (with cycle protection via the accumulated `path`). When an
-# MAGIC edge-label column is configured, each row also carries `predicates` — the
-# MAGIC ordered list of relationship labels walked — so Genie can answer not just
+# MAGIC Fixed-hop `UNION ALL` blocks (one per hop, with cycle protection via the
+# MAGIC accumulated `path`) rather than `WITH RECURSIVE`: Spark's recursive-CTE
+# MAGIC executor materializes the full closure before any outer `start_id` filter is
+# MAGIC applied, which blows the recursion row limit on dense graphs. Plain join
+# MAGIC chains get normal predicate pushdown, so `WHERE start_id = ...` stays cheap.
+# MAGIC When an edge-label column is configured, each row also carries `predicates` —
+# MAGIC the ordered list of relationship labels walked — so Genie can answer not just
 # MAGIC "what is reachable from X" but "*how* is X connected to Y".
 
 # COMMAND ----------
 
 def khop_sql(view_name: str, walk_from: str, walk_to: str) -> str:
-    """Build a recursive k-hop view walking edges from `walk_from` to `walk_to`."""
+    """Build a fixed-hop k-hop view walking edges from `walk_from` to `walk_to`."""
     if EDGE_LABEL:
-        walk_cols       = "(start_id, current_id, hop, path, predicates)"
-        anchor_extra    = ",\n           CAST(ARRAY() AS ARRAY<STRING>) AS predicates"
-        step_extra      = f", array_append(w.predicates, CAST(e.{qid(EDGE_LABEL)} AS STRING))"
-        select_extra    = ",\n  w.predicates"
+        h1_extra   = f",\n           ARRAY(CAST(e.{qid(EDGE_LABEL)} AS STRING)) AS predicates"
+        step_extra = f", array_append(p.predicates, CAST(e.{qid(EDGE_LABEL)} AS STRING))"
     else:
-        walk_cols       = "(start_id, current_id, hop, path)"
-        anchor_extra    = ""
-        step_extra      = ""
-        select_extra    = ""
+        h1_extra   = ""
+        step_extra = ""
+    hops = [f"""
+    SELECT e.{qid(walk_from)} AS start_id,
+           e.{qid(walk_to)} AS reached_id,
+           1 AS hop,
+           ARRAY(e.{qid(walk_from)}, e.{qid(walk_to)}) AS path{h1_extra}
+    FROM {EDGE_TABLE} e
+    WHERE e.{qid(walk_from)} <> e.{qid(walk_to)}"""]
+    for k in range(2, MAX_HOPS + 1):
+        hops.append(f"""
+    SELECT p.start_id,
+           e.{qid(walk_to)} AS reached_id,
+           {k} AS hop,
+           array_append(p.path, e.{qid(walk_to)}) AS path{step_extra}
+    FROM hop{k - 1} p
+    JOIN {EDGE_TABLE} e ON e.{qid(walk_from)} = p.reached_id
+    WHERE NOT array_contains(p.path, e.{qid(walk_to)})""")
+    ctes = ",\n".join(f"hop{k} AS ({sql}\n)" for k, sql in enumerate(hops, start=1))
+    union = "\nUNION ALL\n".join(f"SELECT * FROM hop{k}" for k in range(1, MAX_HOPS + 1))
     return f"""
 CREATE OR REPLACE VIEW {OUT_NS}.{view_name} AS
-WITH RECURSIVE walk {walk_cols} AS (
-    SELECT {qid(NODE_SOURCE_ID)} AS start_id,
-           {qid(NODE_SOURCE_ID)} AS current_id,
-           0 AS hop,
-           ARRAY({qid(NODE_SOURCE_ID)}) AS path{anchor_extra}
-    FROM {NODE_SOURCE}
-  UNION ALL
-    SELECT w.start_id, e.{qid(walk_to)}, w.hop + 1, array_append(w.path, e.{qid(walk_to)}){step_extra}
-    FROM walk w
-    JOIN {EDGE_TABLE} e ON e.{qid(walk_from)} = w.current_id
-    WHERE w.hop < {MAX_HOPS}
-      AND NOT array_contains(w.path, e.{qid(walk_to)})
-)
-SELECT
-  w.start_id,
-  w.current_id AS reached_id,
-  w.hop,
-  w.path{select_extra}
-FROM walk w
-WHERE w.hop > 0
+WITH
+{ctes}
+{union}
 """
 
 spark.sql(khop_sql("downstream_khop", walk_from=EDGE_SRC, walk_to=EDGE_DST))
@@ -271,13 +272,27 @@ print(f"Created {OUT_NS}.node_degree")
 # COMMAND ----------
 
 # MAGIC %md ## 6. Smoke test
+# MAGIC
+# MAGIC The k-hop views walk from *every* node, so an unfiltered `COUNT(*)` materializes the
+# MAGIC full transitive closure — on dense graphs that exceeds Spark's recursion row limit.
+# MAGIC They are meant to be queried the way Genie queries them: filtered by `start_id`.
+# MAGIC The smoke test does the same, anchoring at a single sample node.
 
 # COMMAND ----------
 
-views = (["nodes_derived"] if DERIVE_NODES else []) + ["edges_enriched", "downstream_khop", "upstream_khop", "node_degree"]
-for view in views:
+for view in (["nodes_derived"] if DERIVE_NODES else []) + ["edges_enriched", "node_degree"]:
     n = spark.sql(f"SELECT COUNT(*) AS n FROM {OUT_NS}.{view}").first()["n"]
     print(f"  {OUT_NS}.{view}: {n:,} rows")
+
+sample_id = spark.sql(
+    f"SELECT {qid(EDGE_SRC)} AS id FROM {EDGE_TABLE} LIMIT 1"
+).first()["id"]
+for view in ["downstream_khop", "upstream_khop"]:
+    n = spark.sql(
+        f"SELECT COUNT(*) AS n FROM (SELECT 1 FROM {OUT_NS}.{view} WHERE start_id = ? LIMIT 10000)",
+        args=[sample_id],
+    ).first()["n"]
+    print(f"  {OUT_NS}.{view} (start_id={sample_id}): {n:,} rows (capped at 10,000)")
 
 # COMMAND ----------
 

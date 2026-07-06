@@ -101,7 +101,7 @@ No agent code changes needed.
 Registered by `notebooks/05_register_uc_functions.py` (substitutes `${catalog}`/`${schema}`
 in the `sql/` files). All are `RETURNS TABLE`, callable from SQL, Genie, or as agent tools:
 
-- **Traversal** (read `gold_triplets` directly): `neighbors(entity_id)`, `khop(entity_id, k)`, `connection_path(a, b)`, `subgraph_edges(entity_id, k)`. Fixed-hop CTEs — no recursive-CTE dependency.
+- **Traversal** (read `gold_triplets` directly): `neighbors(entity_id)`, `khop(entity_id, k)`, `connection_path(a, b)`, `subgraph_edges(entity_id, k)`.
 - **Analytics serving** (read the precomputed tables): `cluster_of(entity_id)`, `members_of_cluster(community_id)`, `top_central_entities(n)`, `shared_community(a, b)`.
 
 The analytics pattern: run the expensive algorithms in batch (notebook 06 or 07), persist
@@ -110,6 +110,6 @@ lookups.
 
 ## Compatibility notes
 
-- The `downstream_khop` / `upstream_khop` **views** use `WITH RECURSIVE` (with `UNION ALL` and cycle protection), which requires a current DBSQL warehouse or DBR 17+. The UC **functions** avoid recursive CTEs entirely and work everywhere.
+- All k-hop traversal (views and UC functions) uses fixed-hop `UNION ALL` join chains, deliberately avoiding `WITH RECURSIVE`: Spark's recursive-CTE executor materializes the full transitive closure before outer filters apply, which exceeds the recursion row limit on dense graphs. The fixed-hop form gets normal predicate pushdown, so always query k-hop views with a `start_id` filter (the seeded Genie instructions do this).
 - Notebook 06 runs networkx on the driver and is serverless-safe; it refuses graphs beyond a configurable edge cap (default 5M) and points you at notebook 07 (GPU) instead.
 - The synthetic data, all names, and all identifiers in this repo are generated — no real data ships here.
