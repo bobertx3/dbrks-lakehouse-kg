@@ -1,0 +1,15 @@
+{
+  "cluster_name": "lakehouse-kg-graphframes",
+  "spark_version": "16.4.x-cpu-ml-scala2.12",
+  "node_type_id": "m5d.xlarge",
+  "driver_node_type_id": "m5d.xlarge",
+  "num_workers": 2,
+  "autotermination_minutes": 60,
+  "custom_tags": {
+    "project": "lakehouse-kg-starter"
+  },
+  "aws_attributes": {
+    "first_on_demand": 1,
+    "availability": "ON_DEMAND"
+  }
+}

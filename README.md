@@ -19,7 +19,7 @@ produce that table — with this pipeline or their own — gets the entire consu
 | Data model | `sql/01_gold_triplets.sql`, `sql/02_dataset_registry.sql` |
 | Genie space | `notebooks/03_derive_graph_views.py`, `notebooks/04_create_genie_space.py` (REST automation) |
 | Graph-algo UC functions | `sql/03_traversal_functions.sql`, `sql/04_analytics_functions.sql`, `notebooks/05_register_uc_functions.py` |
-| Batch algorithms | `notebooks/06_graph_algorithms.py` (networkx, serverless-safe), `notebooks/07_cugraph_gpu.py` (NVIDIA RAPIDS cuGraph) |
+| Batch algorithms | `notebooks/06_graph_algorithms.py` (networkx, serverless-safe), `notebooks/07_cugraph_gpu.py` (NVIDIA RAPIDS cuGraph), `notebooks/08_graphframes_distributed.py` (Apache GraphFrames, distributed CPU) |
 | Worked example | Synthetic fraud dataset (`notebooks/01_synthetic_data.py`) + fraud domain pack |
 | Diagram | `docs/architecture.drawio` (editable in draw.io / Lucidchart), `docs/architecture.png` |
 
@@ -35,7 +35,8 @@ order. All notebooks are parameterized with widgets — defaults target
 4. **`04_create_genie_space`** — create/update a Genie space over those views via the REST API, seeded with instructions, sample questions, and example SQL.
 5. **`05_register_uc_functions`** — register 8 UC SQL functions (traversal + analytics serving).
 6. **`06_graph_algorithms`** — precompute PageRank, degree, betweenness, Louvain communities, connected components into `entity_centrality` + `entity_communities` (networkx on the driver; guarded for graphs up to ~5M edges).
-7. **`07_cugraph_gpu`** — the scale-up alternative to 06: same outputs, computed on GPU with NVIDIA RAPIDS cuGraph (`cluster_specs/gpu_cugraph.json` has a ready cluster spec).
+7. **`07_cugraph_gpu`** — GPU scale-up alternative to 06: same outputs, computed with NVIDIA RAPIDS cuGraph (`cluster_specs/gpu_cugraph.json` has a ready cluster spec).
+8. **`08_graphframes_distributed`** — distributed-CPU scale-out alternative to 06: same outputs via Apache GraphFrames on an ML-runtime cluster (`cluster_specs/classic_graphframes.json`), where GraphFrames ships pre-installed. Label propagation stands in for Louvain; betweenness is written as NULL.
 
 ## The triplet contract
 
@@ -104,12 +105,13 @@ in the `sql/` files). All are `RETURNS TABLE`, callable from SQL, Genie, or as a
 - **Traversal** (read `gold_triplets` directly): `neighbors(entity_id)`, `khop(entity_id, k)`, `connection_path(a, b)`, `subgraph_edges(entity_id, k)`.
 - **Analytics serving** (read the precomputed tables): `cluster_of(entity_id)`, `members_of_cluster(community_id)`, `top_central_entities(n)`, `shared_community(a, b)`.
 
-The analytics pattern: run the expensive algorithms in batch (notebook 06 or 07), persist
-`entity_centrality` + `entity_communities`, and serve results through cheap UC-function
-lookups.
+The analytics pattern: run the expensive algorithms in batch (notebook 06, 07, or 08 —
+pick by scale and available compute), persist `entity_centrality` + `entity_communities`,
+and serve results through cheap UC-function lookups.
 
 ## Compatibility notes
 
 - All k-hop traversal (views and UC functions) uses fixed-hop `UNION ALL` join chains, deliberately avoiding `WITH RECURSIVE`: Spark's recursive-CTE executor materializes the full transitive closure before outer filters apply, which exceeds the recursion row limit on dense graphs. The fixed-hop form gets normal predicate pushdown, so always query k-hop views with a `start_id` filter (the seeded Genie instructions do this).
-- Notebook 06 runs networkx on the driver and is serverless-safe; it refuses graphs beyond a configurable edge cap (default 5M) and points you at notebook 07 (GPU) instead.
+- Notebook 06 runs networkx on the driver and is serverless-safe; it refuses graphs beyond a configurable edge cap (default 5M) and points you at notebook 07 (GPU) or 08 (distributed CPU) instead.
+- Notebook 08 requires a Databricks **ML runtime** cluster — GraphFrames ships pre-installed there (standard runtimes and serverless don't include it).
 - The synthetic data, all names, and all identifiers in this repo are generated — no real data ships here.
