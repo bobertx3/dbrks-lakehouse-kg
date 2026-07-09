@@ -5,6 +5,12 @@ database required. An agentic pipeline discovers and generates triplets from you
 tables; templates then make the graph queryable through Genie (natural language), Unity
 Catalog SQL functions (agent tools), and batch graph algorithms (CPU or NVIDIA GPU).
 
+> This is the **NVIDIA edition** of the starter kit, featuring a GPU-accelerated
+> analytics tier built on NVIDIA RAPIDS cuGraph (notebook 07). A companion **CPU
+> edition** (`lakehouse-kg-starter-cpu`) omits the GPU tier and runs batch analytics
+> on single-node or distributed CPU only. Both editions share the same data contract
+> and consumption layer.
+
 ![Architecture](docs/architecture.png)
 
 Everything reduces to one contract: a `gold_triplets` Delta table. Any data team that can
