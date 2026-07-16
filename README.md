@@ -1,27 +1,32 @@
 # Lakehouse Knowledge Graph Starter Kit
 
-Foundational tooling for building knowledge graphs on Databricks — no external graph
-database required. An agentic pipeline discovers and generates triplets from your Delta
-tables; templates then make the graph queryable through Genie (natural language), Unity
-Catalog SQL functions (agent tools), and batch graph algorithms (CPU or NVIDIA GPU).
+**Doc alignment:** [Roadmap-To-Graph](https://docs.google.com/document/d/1G8OJGfHqwD12be7mVL-PTmxvQJauRxs10suGXcZjhA0) → *Client Need: Interconnectivity of data for Agent Context* → **Solution 3** (agentic KG + full consumption layer). The doc's "Lakehouse Knowledge Graph Starter kit" — packages the pipeline's *templates* (Genie space, UC functions, batch algorithms) around the standalone [`agentic-triplets`](https://github.com/william-jeffery_data/agentic-triplets) pipeline. Tessera consumes the same `gold_triplets` contract.
 
-> This is the **NVIDIA edition** of the starter kit, featuring a GPU-accelerated
-> analytics tier built on NVIDIA RAPIDS cuGraph (notebook 07). A companion **CPU
-> edition** (`lakehouse-kg-starter-cpu`) omits the GPU tier and runs batch analytics
-> on single-node or distributed CPU only. Both editions share the same data contract
-> and consumption layer.
+Foundational tooling for building knowledge graphs on Databricks — no external graph
+database required. The agentic pipeline (the `agentic-triplets` package) discovers and
+generates triplets from your Delta tables; the templates in this kit then make the graph
+queryable through Genie (natural language), Unity Catalog SQL functions (agent tools), and
+batch graph algorithms.
+
+> **One kit, two compute tiers (merged from the former nvidia/cpu editions).** Batch
+> analytics run on CPU by default (notebook 06 networkx; 08 distributed GraphFrames).
+> The optional **GPU tier** (notebook 07, NVIDIA RAPIDS cuGraph) installs via
+> `requirements-gpu.txt` on a RAPIDS cluster (`cluster_specs/gpu_cugraph.json`) — skip it
+> and everything else runs unchanged on CPU.
 
 ![Architecture](docs/architecture.png)
 
-Everything reduces to one contract: a `gold_triplets` Delta table. Any data team that can
-produce that table — with this pipeline or their own — gets the entire consumption layer
-(Genie space, traversal functions, analytics functions, graph algorithms) for free.
+Everything reduces to one contract: a `gold_triplets` Delta table (the shared
+[`kg-contracts`](https://github.com/william-jeffery_data/kg-contracts) schema). Any data
+team that can produce that table — with the `agentic-triplets` pipeline or their own ETL —
+gets the entire consumption layer (Genie space, traversal functions, analytics functions,
+graph algorithms) for free.
 
 ## What's in the box
 
 | Layer | Assets |
 |---|---|
-| Triplet generation | `lakehouse_kg/` Python package: 8-agent orchestrator with pluggable domain packs |
+| Triplet generation | the standalone **`agentic-triplets`** package (8-agent orchestrator + pluggable DomainPacks) — installed via `requirements.txt`, not vendored here |
 | Data model | `sql/01_gold_triplets.sql`, `sql/02_dataset_registry.sql` |
 | Genie space | `notebooks/03_derive_graph_views.py`, `notebooks/04_create_genie_space.py` (REST automation) |
 | Graph-algo UC functions | `sql/03_traversal_functions.sql`, `sql/04_analytics_functions.sql`, `notebooks/05_register_uc_functions.py` |
@@ -31,9 +36,11 @@ produce that table — with this pipeline or their own — gets the entire consu
 
 ## Quick start
 
-Clone the repo into your workspace (Repos or Workspace Files), then run the notebooks in
-order. All notebooks are parameterized with widgets — defaults target
-`main.knowledge_graph`.
+Deploy the bundle (`databricks bundle deploy`) or clone the repo into your workspace
+(Repos or Workspace Files) and run the notebooks in order. The notebooks
+`%pip install` the `agentic-triplets` package (see `requirements.txt`; GPU tier in
+`requirements-gpu.txt`). All notebooks are parameterized with widgets and the DAB exposes
+`catalog`/`schema`/`domain`/`llm_endpoint` variables — defaults target `main.knowledge_graph`.
 
 1. **`01_synthetic_data`** — generate the fraud worked example (skip if you have your own tables).
 2. **`02_triplet_pipeline`** — run the 8-agent pipeline; pick a domain pack (`generic` or `fraud`). Writes `gold_triplets` + `agent_execution_log`.
@@ -46,7 +53,10 @@ order. All notebooks are parameterized with widgets — defaults target
 
 ## The triplet contract
 
-`gold_triplets` — one row per discovered relationship:
+`gold_triplets` — one row per discovered relationship. The first 8 columns are the shared
+[`kg-contracts`](https://github.com/william-jeffery_data/kg-contracts) contract consumed
+unchanged by Tessera, Genie, and the algorithm notebooks; `properties` + `created_at` are
+the optional superset this kit adds:
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -78,14 +88,15 @@ Eight agents each ask a different question of the data:
 | Validation | Validation | Are triplets deduplicated, consistent, corroborated? |
 
 ```python
-from lakehouse_kg import PipelineConfig, AgenticOrchestrator
-from lakehouse_kg.domains import get_domain_pack
+# pip install "agentic-triplets[spark,llm] @ git+https://github.com/william-jeffery_data/agentic-triplets"
+from agentic_triplets import PipelineConfig, AgenticOrchestrator
+from agentic_triplets.domains import get_domain_pack
 
 config = PipelineConfig(
     catalog="main",
     schema="knowledge_graph",
     domain=get_domain_pack("generic"),   # or "fraud"
-    llm_endpoint="databricks-meta-llama-3-3-70b-instruct",
+    llm_endpoint="databricks-claude-sonnet-4-6",
 )
 summary = AgenticOrchestrator(spark, config).run()
 ```
@@ -93,15 +104,14 @@ summary = AgenticOrchestrator(spark, config).run()
 ### Domain packs
 
 All domain knowledge — entity-type patterns, predicate vocabulary, LLM prompts, Genie
-view definitions — lives in a `DomainPack` (`lakehouse_kg/domain.py`), not in the agents.
-Two packs ship:
+view definitions — lives in a `DomainPack` (in the `agentic_triplets` package), not in the
+agents. Two packs ship:
 
 - **`generic`** — neutral defaults (Person/Organization/Location/Event/Asset/Document) that work on any schema.
 - **`fraud`** — the fully worked example: fraud entity types, predicates like `EXHIBITS_VELOCITY_ANOMALY`, and 8 fraud-named Genie views.
 
-To adapt the kit to your use case, copy `lakehouse_kg/domains/fraud.py`, swap in your
-entity patterns, predicates, and view specs, and register it in `domains/__init__.py`.
-No agent code changes needed.
+To adapt the kit to your use case, build a new `DomainPack` in `agentic_triplets` (copy
+`domains/fraud.py`) and pass it to `PipelineConfig(domain=...)`. No agent code changes needed.
 
 ## UC functions
 

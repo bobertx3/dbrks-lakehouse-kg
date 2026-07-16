@@ -26,21 +26,18 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install scikit-learn networkx openai -q
+# MAGIC %md
+# MAGIC The agentic pipeline lives in the standalone `agentic-triplets` package (the
+# MAGIC canonical 8-agent orchestrator). This starter kit is the consumption layer:
+# MAGIC it installs that package and wires its output into Genie / UC functions / algorithms.
+
+# COMMAND ----------
+
+# MAGIC %pip install "agentic-triplets[spark,llm] @ git+https://github.com/william-jeffery_data/agentic-triplets" -q
 
 # COMMAND ----------
 
 dbutils.library.restartPython()
-
-# COMMAND ----------
-
-# Make the lakehouse_kg package importable from this repo checkout, wherever it lives
-import os
-import sys
-
-notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-repo_root = os.path.dirname(os.path.dirname(f"/Workspace{notebook_path}"))
-sys.path.insert(0, repo_root)
 
 # COMMAND ----------
 
@@ -56,7 +53,7 @@ dbutils.widgets.text("source_tables", "customers,merchants,accounts,transactions
 dbutils.widgets.dropdown("enable_llm", "true", ["true", "false"], "Enable LLM Agent")
 dbutils.widgets.dropdown("enable_ml", "true", ["true", "false"], "Enable ML Agent")
 dbutils.widgets.dropdown("enable_graph", "true", ["true", "false"], "Enable Graph Agent")
-dbutils.widgets.text("llm_endpoint", "databricks-meta-llama-3-3-70b-instruct", "LLM Endpoint")
+dbutils.widgets.text("llm_endpoint", "databricks-claude-sonnet-4-6", "LLM Endpoint")
 dbutils.widgets.text("min_confidence", "0.3", "Min Confidence Threshold")
 
 # COMMAND ----------
@@ -98,9 +95,8 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 
-from lakehouse_kg.config import PipelineConfig
-from lakehouse_kg.domains import get_domain_pack
-from lakehouse_kg.orchestrator import AgenticOrchestrator
+from agentic_triplets import PipelineConfig, AgenticOrchestrator
+from agentic_triplets.domains import get_domain_pack
 
 domain_pack = get_domain_pack(domain_name)
 print(f"Domain pack '{domain_pack.name}': {domain_pack.description}")

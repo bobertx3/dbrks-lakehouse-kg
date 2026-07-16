@@ -1,0 +1,6 @@
+# Lakehouse KG Starter — GPU tier (NVIDIA edition).
+# Install on a RAPIDS GPU cluster (cluster_specs/gpu_cugraph.json) for notebook
+# 07_cugraph_gpu.py. These wheels are CUDA-specific; do NOT install on CPU clusters.
+-r requirements.txt
+cudf-cu12
+cugraph-cu12
