@@ -33,7 +33,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install "agentic-triplets[spark,llm] @ git+https://github.com/william-jeffery_data/agentic-triplets" -q
+# MAGIC %pip install "agentic-triplets[spark,llm]" -q
 
 # COMMAND ----------
 
