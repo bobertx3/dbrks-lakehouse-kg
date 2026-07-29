@@ -20,7 +20,7 @@
 CREATE TABLE IF NOT EXISTS ${catalog}.${schema}.gold_triplets (
   subject_id    STRING NOT NULL COMMENT 'ID of the subject (head) entity of the triplet. Joinable to object_id of other rows to walk the graph.',
   subject_type  STRING           COMMENT 'Entity type of the subject, e.g. company, person, document, part. Free-form but should be consistent within a dataset.',
-  predicate     STRING NOT NULL COMMENT 'Relationship name connecting subject to object, e.g. owns, located_at, supplies, mentions. Lower snake_case verbs by convention.',
+  predicate     STRING NOT NULL COMMENT 'Relationship name connecting subject to object, e.g. OWNS_ACCOUNT, located_at, supplies. Casing is the producer choice (agentic packs use UPPER_SNAKE) - keep it consistent within a dataset.',
   object_id     STRING NOT NULL COMMENT 'ID of the object (tail) entity of the triplet. Joinable to subject_id of other rows to walk the graph.',
   object_type   STRING           COMMENT 'Entity type of the object, e.g. company, address, chemical, topic. Free-form but should be consistent within a dataset.',
   confidence    DOUBLE           COMMENT 'Extraction confidence in [0.0, 1.0]. Deterministic joins are typically 1.0 and LLM-extracted relations lower. Filter with confidence >= threshold for high-precision views.',

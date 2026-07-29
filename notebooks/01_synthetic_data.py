@@ -19,7 +19,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install scikit-learn networkx -q
+# MAGIC %pip install numpy pandas -q
 
 # COMMAND ----------
 
@@ -27,7 +27,8 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
-# Make the lakehouse_kg package importable from this repo checkout, wherever it lives
+# Make the repo checkout importable so `helpers.synthetic_fraud` (the fraud sample
+# data generator that pairs with the fraud DomainPack) resolves, wherever it lives.
 import os
 import sys
 
@@ -75,8 +76,7 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
 
 # COMMAND ----------
 
-from lakehouse_kg.config import SyntheticDataConfig
-from lakehouse_kg.generators.synthetic_fraud import FraudDataGenerator
+from helpers.synthetic_fraud import SyntheticDataConfig, FraudDataGenerator
 
 config = SyntheticDataConfig(
     catalog=catalog,

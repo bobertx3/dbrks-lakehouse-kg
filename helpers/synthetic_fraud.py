@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import random
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -19,9 +20,32 @@ import numpy as np
 import pandas as pd
 from pyspark.sql import SparkSession
 
-from lakehouse_kg.config import SyntheticDataConfig
+logger = logging.getLogger("lakehouse_kg.helpers.fraud")
 
-logger = logging.getLogger("lakehouse_kg.generators")
+
+@dataclass
+class SyntheticDataConfig:
+    """Configuration for synthetic fraud data generation (fraud worked example).
+
+    Lives with the fraud demo, not the core package: the core pipeline is
+    domain-neutral, so scenario data generators belong under demos/.
+    """
+
+    catalog: str = "main"
+    schema: str = "knowledge_graph"
+    n_customers: int = 5000
+    n_merchants: int = 500
+    n_accounts: int = 6000
+    n_transactions: int = 100_000
+    n_devices: int = 4000
+    n_alerts: int = 2000
+    fraud_rate: float = 0.03
+    shared_address_rate: float = 0.08
+    shared_device_rate: float = 0.05
+    seed: int = 42
+
+    def table_ref(self, table_name: str) -> str:
+        return f"`{self.catalog}`.`{self.schema}`.`{table_name}`"
 
 FIRST_NAMES = [
     "James", "Mary", "Robert", "Patricia", "John", "Jennifer", "Michael",

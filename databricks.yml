@@ -1,0 +1,69 @@
+bundle:
+  name: lakehouse-kg
+
+# ---------------------------------------------------------------------------
+# Lakehouse Knowledge Graph Starter Kit.
+# Consumes the standalone `agentic-triplets` pipeline and templates its output
+# into a Genie space, UC traversal/analytics functions, and graph algorithms.
+# Set catalog/schema to your environment; everything else has a sensible default.
+# ---------------------------------------------------------------------------
+variables:
+  catalog:
+    description: Unity Catalog catalog for the knowledge graph
+    default: main
+  schema:
+    description: Schema (created if missing) holding gold_triplets + derived tables
+    default: knowledge_graph
+  domain:
+    description: "DomainPack to inject: generic or fraud (the shipped worked example)"
+    default: fraud
+  llm_endpoint:
+    description: Foundation Model / serving endpoint for the LLM semantic agent
+    default: databricks-claude-sonnet-4-6
+  warehouse_id:
+    description: SQL warehouse ID for UC-function registration and Genie
+    default: ""
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # workspace.host comes from your Databricks CLI profile — not hardcoded here.
+
+resources:
+  jobs:
+    lakehouse_kg_build:
+      name: "Lakehouse KG — build (${var.domain})"
+      tasks:
+        - task_key: synthetic_data
+          notebook_task:
+            notebook_path: ./notebooks/01_synthetic_data.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+        - task_key: triplet_pipeline
+          depends_on:
+            - task_key: synthetic_data
+          notebook_task:
+            notebook_path: ./notebooks/02_triplet_pipeline.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              domain: ${var.domain}
+              llm_endpoint: ${var.llm_endpoint}
+        - task_key: derive_graph_views
+          depends_on:
+            - task_key: triplet_pipeline
+          notebook_task:
+            notebook_path: ./notebooks/03_derive_graph_views.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+        - task_key: register_uc_functions
+          depends_on:
+            - task_key: derive_graph_views
+          notebook_task:
+            notebook_path: ./notebooks/05_register_uc_functions.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
