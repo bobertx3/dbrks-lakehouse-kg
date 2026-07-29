@@ -29,9 +29,9 @@
 # MAGIC roughly **~5M edges**. Beyond that, switch to one of the two scale
 # MAGIC alternatives — both write the exact same two output tables:
 # MAGIC `notebooks/07_cugraph_gpu.py` (NVIDIA RAPIDS cuGraph on a GPU cluster) or
-# MAGIC `notebooks/08_graphframes_distributed.py` (Apache GraphFrames, distributed
-# MAGIC CPU). The `max_driver_edges` widget enforces this with a hard stop rather
-# MAGIC than a silent OOM.
+# MAGIC `notebooks/08_graphframes_distributed.py` (GraphFrames Serverless,
+# MAGIC distributed CPU). The `max_driver_edges` widget enforces this with a hard
+# MAGIC stop rather than a silent OOM.
 
 # COMMAND ----------
 
@@ -95,7 +95,7 @@ if n_edges > MAX_DRIVER_EDGES:
     raise ValueError(
         "gold_triplets has {:,} edges, above the {:,} driver limit. ".format(n_edges, MAX_DRIVER_EDGES)
         + "Use notebooks/07_cugraph_gpu.py (GPU cuGraph) or notebooks/08_graphframes_distributed.py "
-        + "(Apache GraphFrames, distributed CPU) - both write the same output tables."
+        + "(GraphFrames Serverless, distributed CPU) - both write the same output tables."
     )
 
 pdf = edges_sdf.toPandas()

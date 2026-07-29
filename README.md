@@ -1,94 +1,119 @@
 # Lakehouse Knowledge Graph Starter Kit
 
-**Doc alignment:** [Roadmap-To-Graph](https://docs.google.com/document/d/1G8OJGfHqwD12be7mVL-PTmxvQJauRxs10suGXcZjhA0) → *Client Need: Interconnectivity of data for Agent Context* → **Solution 3** (agentic KG + full consumption layer). The doc's "Lakehouse Knowledge Graph Starter kit" — packages the pipeline's *templates* (Genie space, UC functions, batch algorithms) around the standalone [`agentic-triplets`](https://github.com/william-jeffery_data/agentic-triplets) pipeline. Tessera consumes the same `gold_triplets` contract.
+[![Databricks Solution Accelerator](https://img.shields.io/badge/Databricks-Solution%20Accelerator-FF3621?logo=databricks&logoColor=white)](https://www.databricks.com/solutions/accelerators)
+![Unity Catalog](https://img.shields.io/badge/Unity%20Catalog-enabled-00A972)
+![Serverless](https://img.shields.io/badge/Serverless-ready-1B3139)
 
-Foundational tooling for building knowledge graphs on Databricks — no external graph
-database required. The agentic pipeline (the `agentic-triplets` package) discovers and
-generates triplets from your Delta tables; the templates in this kit then make the graph
-queryable through Genie (natural language), Unity Catalog SQL functions (agent tools), and
-batch graph algorithms.
+Build a knowledge graph on Databricks. You do not need an external graph
+database.
 
-> **One kit, two compute tiers (merged from the former nvidia/cpu editions).** Batch
-> analytics run on CPU by default (notebook 06 networkx; 08 distributed GraphFrames).
-> The optional **GPU tier** (notebook 07, NVIDIA RAPIDS cuGraph) installs via
-> `requirements-gpu.txt` on a RAPIDS cluster (`cluster_specs/gpu_cugraph.json`) — skip it
-> and everything else runs unchanged on CPU.
+An agentic pipeline reads your Delta tables. It finds entities and generates the
+relationships between them. This kit then makes the graph easy to query. You can
+query it in three ways:
+
+- **Genie** — ask questions in natural language.
+- **Unity Catalog SQL functions** — call the graph from SQL or from an agent tool.
+- **Batch graph algorithms** — compute centrality and communities.
+
+Everything is built on one contract: a `gold_triplets` Delta table. Any team
+that can produce this table gets the full query layer. The team can use the
+pipeline in this kit or its own ETL.
 
 ![Architecture](docs/architecture.png)
 
-Everything reduces to one contract: a `gold_triplets` Delta table (the shared
-[`kg-contracts`](https://github.com/william-jeffery_data/kg-contracts) schema). Any data
-team that can produce that table — with the `agentic-triplets` pipeline or their own ETL —
-gets the entire consumption layer (Genie space, traversal functions, analytics functions,
-graph algorithms) for free.
+## What is in the kit
 
-## What's in the box
-
-| Layer | Assets |
+| Layer | Files |
 |---|---|
-| Triplet generation | the standalone **`agentic-triplets`** package (8-agent orchestrator + pluggable DomainPacks) — installed via `requirements.txt`, not vendored here |
+| Triplet generation | the `agentic-triplets` package (an 8-agent pipeline with pluggable domain packs), installed through `requirements.txt` |
 | Data model | `sql/01_gold_triplets.sql`, `sql/02_dataset_registry.sql` |
-| Genie space | `notebooks/03_derive_graph_views.py`, `notebooks/04_create_genie_space.py` (REST automation) |
-| Graph-algo UC functions | `sql/03_traversal_functions.sql`, `sql/04_analytics_functions.sql`, `notebooks/05_register_uc_functions.py` |
-| Batch algorithms | `notebooks/06_graph_algorithms.py` (networkx, serverless-safe), `notebooks/07_cugraph_gpu.py` (NVIDIA RAPIDS cuGraph), `notebooks/08_graphframes_distributed.py` (Apache GraphFrames, distributed CPU) |
-| Worked example | Synthetic fraud dataset (`notebooks/01_synthetic_data.py`) + fraud domain pack |
-| Diagram | `docs/architecture.drawio` (editable in draw.io / Lucidchart), `docs/architecture.png` |
+| Genie space | `notebooks/03_derive_graph_views.py`, `notebooks/04_create_genie_space.py` |
+| Graph SQL functions | `sql/03_traversal_functions.sql`, `sql/04_analytics_functions.sql`, `notebooks/05_register_uc_functions.py` |
+| Batch algorithms | `notebooks/06_graph_algorithms.py`, `notebooks/07_cugraph_gpu.py`, `notebooks/08_graphframes_distributed.py` |
+| Worked example | a synthetic fraud dataset (`notebooks/01_synthetic_data.py`) and a fraud domain pack |
+| Diagram | `docs/architecture.drawio`, `docs/architecture.png` |
+
+## Choose a graph algorithm engine
+
+Notebooks 06, 07, and 08 all compute the same result. Each one writes the same
+two tables (`entity_centrality` and `entity_communities`). The serving SQL
+functions read either output. Pick the engine that matches your data size and
+your available compute.
+
+| Engine | Notebook | Compute | Best for | Notes |
+|---|---|---|---|---|
+| **networkx** (driver) | `06_graph_algorithms.py` | Serverless or any cluster | Graphs up to about 5M edges | Pure Python on the driver. The default. Includes approximate betweenness. |
+| **GraphFrames Serverless** (distributed CPU) | `08_graphframes_distributed.py` | Serverless or any cluster | Large graphs, no GPU | Distributed Spark. Runs on serverless. Computes true Louvain. Does not compute betweenness. |
+| **NVIDIA RAPIDS cuGraph** (GPU) | `07_cugraph_gpu.py` | GPU cluster | Very large graphs, fastest | Scales to hundreds of millions of edges. Needs a GPU cluster (`cluster_specs/gpu_cugraph.json`). |
+
+Start with notebook 06. Move to notebook 08 or 07 when your graph is too large
+for the driver. Notebook 06 stops with a clear message when the graph is above
+its edge limit. It then tells you to use notebook 07 or 08.
+
+### About the two distributed engines
+
+- **GraphFrames Serverless** ([`graphframes-serverless`](https://pypi.org/project/graphframes-serverless/))
+  is a pure-Python graph library. It has the GraphFrames API but needs no JVM
+  library install. It runs on Databricks serverless compute. Notebook 08
+  installs it with `%pip`.
+- **NVIDIA RAPIDS cuGraph** is the GPU option. It is the fastest engine at large
+  scale. Install it with `requirements-gpu.txt` on a RAPIDS GPU cluster. Skip it
+  if you have no GPU. Everything else runs on CPU without change.
 
 ## Quick start
 
-Deploy the bundle (`databricks bundle deploy`) or clone the repo into your workspace
-(Repos or Workspace Files) and run the notebooks in order. The notebooks
-`%pip install` the `agentic-triplets` package (see `requirements.txt`; GPU tier in
-`requirements-gpu.txt`). All notebooks are parameterized with widgets and the DAB exposes
-`catalog`/`schema`/`domain`/`llm_endpoint` variables — defaults target `main.knowledge_graph`.
+Deploy the bundle with `databricks bundle deploy`, or clone the repo into your
+workspace. Then run the notebooks in order. The notebooks install their
+dependencies with `%pip`. All notebooks use widgets for parameters. The bundle
+sets `catalog`, `schema`, `domain`, and `llm_endpoint`. The defaults target
+`main.knowledge_graph`.
 
-1. **`01_synthetic_data`** — generate the fraud worked example (skip if you have your own tables).
-2. **`02_triplet_pipeline`** — run the 8-agent pipeline; pick a domain pack (`generic` or `fraud`). Writes `gold_triplets` + `agent_execution_log`.
-3. **`03_derive_graph_views`** — derive `edges_enriched`, `nodes_derived`, `downstream_khop`, `upstream_khop`, `node_degree` views over `gold_triplets` (or any node/edge table pair you configure).
-4. **`04_create_genie_space`** — create/update a Genie space over those views via the REST API, seeded with instructions, sample questions, and example SQL.
-5. **`05_register_uc_functions`** — register 8 UC SQL functions (traversal + analytics serving).
-6. **`06_graph_algorithms`** — precompute PageRank, degree, betweenness, Louvain communities, connected components into `entity_centrality` + `entity_communities` (networkx on the driver; guarded for graphs up to ~5M edges).
-7. **`07_cugraph_gpu`** — GPU scale-up alternative to 06: same outputs, computed with NVIDIA RAPIDS cuGraph (`cluster_specs/gpu_cugraph.json` has a ready cluster spec).
-8. **`08_graphframes_distributed`** — distributed-CPU scale-out alternative to 06: same outputs via Apache GraphFrames on an ML-runtime cluster (`cluster_specs/classic_graphframes.json`), where GraphFrames ships pre-installed. Label propagation stands in for Louvain; betweenness is written as NULL.
+1. **`01_synthetic_data`** — generate the fraud example. Skip this if you have your own tables.
+2. **`02_triplet_pipeline`** — run the pipeline. Choose a domain pack (`generic` or `fraud`). This writes `gold_triplets`.
+3. **`03_derive_graph_views`** — build the graph views over `gold_triplets`.
+4. **`04_create_genie_space`** — create a Genie space over those views.
+5. **`05_register_uc_functions`** — register 8 Unity Catalog SQL functions.
+6. **`06_graph_algorithms`** — compute PageRank, degree, betweenness, communities, and components (networkx driver path).
+7. **`07_cugraph_gpu`** — the GPU alternative to notebook 06 (NVIDIA RAPIDS cuGraph).
+8. **`08_graphframes_distributed`** — the distributed-CPU alternative to notebook 06 (GraphFrames Serverless).
+
+Run only one of notebooks 06, 07, or 08. They produce the same tables.
 
 ## The triplet contract
 
-`gold_triplets` — one row per discovered relationship. The first 8 columns are the shared
-[`kg-contracts`](https://github.com/william-jeffery_data/kg-contracts) contract consumed
-unchanged by Tessera, Genie, and the algorithm notebooks; `properties` + `created_at` are
-the optional superset this kit adds:
+`gold_triplets` holds one row for each relationship. The first 8 columns are the
+shared contract. The `properties` and `created_at` columns are an optional
+addition from this kit.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `subject_id` / `subject_type` | STRING | Source entity and its type |
-| `predicate` | STRING | Relationship type (`OWNS_ACCOUNT`, `MEMBER_OF_COMMUNITY`, …) |
-| `object_id` / `object_type` | STRING | Target entity and its type |
-| `confidence` | DOUBLE | 0.0–1.0; boosted when multiple agents corroborate |
-| `source_agent` / `source_method` | STRING | Which agent and technique produced the row |
+| `subject_id` / `subject_type` | STRING | The source entity and its type |
+| `predicate` | STRING | The relationship type (for example, `OWNS_ACCOUNT`) |
+| `object_id` / `object_type` | STRING | The target entity and its type |
+| `confidence` | DOUBLE | A value from 0.0 to 1.0 |
+| `source_agent` / `source_method` | STRING | The agent and the technique that produced the row |
 | `properties` | STRING | JSON metadata (scores, reasoning, amounts) |
-| `created_at` | TIMESTAMP | Generation time |
+| `created_at` | TIMESTAMP | The time of generation |
 
-`dataset_registry` holds one row per onboarded dataset (display name, triplet table FQN,
-sample prompts, optional agent endpoint) so multiple graphs can share one deployment of
-the consumption layer.
+`dataset_registry` holds one row for each dataset you onboard. This lets many
+graphs share one deployment of the query layer.
 
 ## The agentic pipeline
 
-Eight agents each ask a different question of the data:
+The pipeline uses 8 agents. Each agent asks a different question of the data.
 
 | Phase | Agent | Question |
 |---|---|---|
 | Discovery | Schema discovery | What datasets and columns exist? |
 | Discovery | Entity resolution | What are the key entities? |
-| Generation | Relationship (rule-based) | What direct FK / shared-attribute links exist? |
+| Generation | Relationship (rule-based) | What direct links exist? |
 | Generation | Statistical | What anomalies stand out? |
-| Generation | ML clustering | What hidden behavioral clusters exist? |
+| Generation | ML clustering | What hidden clusters exist? |
 | Generation | LLM semantic | What can a foundation model infer? |
-| Enrichment | Graph topology | What hubs, bridges, and communities emerge? |
-| Validation | Validation | Are triplets deduplicated, consistent, corroborated? |
+| Enrichment | Graph topology | What hubs, bridges, and communities appear? |
+| Validation | Validation | Are the triplets consistent and deduplicated? |
 
 ```python
-# pip install "agentic-triplets[spark,llm] @ git+https://github.com/william-jeffery_data/agentic-triplets"
 from agentic_triplets import PipelineConfig, AgenticOrchestrator
 from agentic_triplets.domains import get_domain_pack
 
@@ -103,31 +128,34 @@ summary = AgenticOrchestrator(spark, config).run()
 
 ### Domain packs
 
-All domain knowledge — entity-type patterns, predicate vocabulary, LLM prompts, Genie
-view definitions — lives in a `DomainPack` (in the `agentic_triplets` package), not in the
-agents. Two packs ship:
+All domain knowledge lives in a domain pack, not in the agents. A domain pack
+holds the entity types, the predicate vocabulary, the LLM prompts, and the Genie
+view definitions. Two packs ship with the pipeline:
 
-- **`generic`** — neutral defaults (Person/Organization/Location/Event/Asset/Document) that work on any schema.
-- **`fraud`** — the fully worked example: fraud entity types, predicates like `EXHIBITS_VELOCITY_ANOMALY`, and 8 fraud-named Genie views.
+- **`generic`** — neutral defaults that work on any schema.
+- **`fraud`** — the full worked example, with fraud entity types and predicates.
 
-To adapt the kit to your use case, build a new `DomainPack` in `agentic_triplets` (copy
-`domains/fraud.py`) and pass it to `PipelineConfig(domain=...)`. No agent code changes needed.
+To adapt the kit, build a new domain pack and pass it to `PipelineConfig`. You
+do not need to change any agent code.
 
-## UC functions
+## Unity Catalog functions
 
-Registered by `notebooks/05_register_uc_functions.py` (substitutes `${catalog}`/`${schema}`
-in the `sql/` files). All are `RETURNS TABLE`, callable from SQL, Genie, or as agent tools:
+Notebook `05_register_uc_functions.py` registers 8 SQL functions. Each one
+returns a table. You can call them from SQL, from Genie, or as an agent tool.
 
-- **Traversal** (read `gold_triplets` directly): `neighbors(entity_id)`, `khop(entity_id, k)`, `connection_path(a, b)`, `subgraph_edges(entity_id, k)`.
-- **Analytics serving** (read the precomputed tables): `cluster_of(entity_id)`, `members_of_cluster(community_id)`, `top_central_entities(n)`, `shared_community(a, b)`.
+- **Traversal** (read `gold_triplets` directly): `neighbors`, `khop`, `connection_path`, `subgraph_edges`.
+- **Analytics** (read the precomputed tables): `cluster_of`, `members_of_cluster`, `top_central_entities`, `shared_community`.
 
-The analytics pattern: run the expensive algorithms in batch (notebook 06, 07, or 08 —
-pick by scale and available compute), persist `entity_centrality` + `entity_communities`,
-and serve results through cheap UC-function lookups.
+The pattern is simple. Run the costly algorithms once in batch (notebook 06, 07,
+or 08). Save the results to `entity_centrality` and `entity_communities`. Then
+serve the results through fast function lookups.
 
-## Compatibility notes
+## Notes
 
-- All k-hop traversal (views and UC functions) uses fixed-hop `UNION ALL` join chains, deliberately avoiding `WITH RECURSIVE`: Spark's recursive-CTE executor materializes the full transitive closure before outer filters apply, which exceeds the recursion row limit on dense graphs. The fixed-hop form gets normal predicate pushdown, so always query k-hop views with a `start_id` filter (the seeded Genie instructions do this).
-- Notebook 06 runs networkx on the driver and is serverless-safe; it refuses graphs beyond a configurable edge cap (default 5M) and points you at notebook 07 (GPU) or 08 (distributed CPU) instead.
-- Notebook 08 requires a Databricks **ML runtime** cluster — GraphFrames ships pre-installed there (standard runtimes and serverless don't include it).
-- The synthetic data, all names, and all identifiers in this repo are generated — no real data ships here.
+- The k-hop traversal uses fixed-hop join chains. It does not use `WITH
+  RECURSIVE`. Always query the k-hop views with a `start_id` filter.
+- Notebook 06 runs on the driver. It stops with a clear message when the graph
+  is above its edge limit (5M by default). It then points you to notebook 07 or 08.
+- Notebook 07 needs a GPU cluster. Do not run it on serverless or on a CPU cluster.
+- Notebook 08 runs on serverless compute or any cluster.
+- All data, names, and identifiers in this repo are synthetic. No real data ships here.

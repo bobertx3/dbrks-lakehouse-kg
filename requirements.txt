@@ -1,5 +1,8 @@
 # Lakehouse KG Starter — base (CPU) dependencies.
 # The agentic pipeline is the standalone canonical package; this kit consumes it.
-agentic-triplets[spark,llm] @ git+https://github.com/william-jeffery_data/agentic-triplets
-# CPU graph algorithms (notebook 06 networkx; 08 uses GraphFrames preinstalled on ML runtimes)
+agentic-triplets[spark,llm]
+# CPU graph algorithms:
+#   notebook 06 — networkx (driver, serverless-safe)
+#   notebook 08 — graphframes-serverless (distributed, runs on serverless too)
 networkx>=3.0
+graphframes-serverless>=0.3.0

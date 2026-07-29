@@ -1,14 +1,19 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # 08 — Distributed graph analytics with Apache GraphFrames (scale-out CPU alternative)
+# MAGIC # 08 — Distributed graph analytics with GraphFrames Serverless (scale-out CPU alternative)
 # MAGIC
-# MAGIC The distributed CPU alternative to `notebooks/06_graph_algorithms.py`: when
-# MAGIC `gold_triplets` grows past what the driver-side networkx path handles (~5M
-# MAGIC edges) and a GPU cluster (`notebooks/07_cugraph_gpu.py`) is not an option,
-# MAGIC [Apache GraphFrames](https://graphframes.github.io/graphframes/docs/_site/index.html)
-# MAGIC runs the same analytics as distributed Spark jobs. It reads `gold_triplets`
-# MAGIC as the edge list and writes the **same two output tables**, so the serving
-# MAGIC UC functions (`sql/04_analytics_functions.sql`) work unchanged.
+# MAGIC This is the distributed-CPU alternative to `notebooks/06_graph_algorithms.py`.
+# MAGIC Use it when `gold_triplets` grows past the size the driver-side networkx
+# MAGIC path handles (about 5M edges) and a GPU cluster
+# MAGIC (`notebooks/07_cugraph_gpu.py`) is not available.
+# MAGIC
+# MAGIC It uses [`graphframes-serverless`](https://pypi.org/project/graphframes-serverless/),
+# MAGIC a pure-Python GraphFrames-style library. Unlike the JVM GraphFrames
+# MAGIC package, it needs no library install on the cluster and **runs on
+# MAGIC Databricks serverless compute** as well as classic clusters. It reads
+# MAGIC `gold_triplets` as the edge list and writes the **same two output tables**,
+# MAGIC so the serving UC functions (`sql/04_analytics_functions.sql`) work
+# MAGIC unchanged.
 # MAGIC
 # MAGIC | Output table | Columns |
 # MAGIC |---|---|
@@ -20,26 +25,27 @@
 # MAGIC |---|---|
 # MAGIC | PageRank | directed, damping 0.85, fixed iterations |
 # MAGIC | Degree | undirected degree (mutual edges collapsed, matching notebook 06) |
-# MAGIC | Betweenness | **not available in GraphFrames** — written as NULL (the serving functions tolerate it) |
-# MAGIC | Label propagation | GraphFrames has no Louvain; LPA fills `community_id` instead. Communities are comparable but not identical to notebook 06's Louvain output |
-# MAGIC | Connected components | persisted as `component_id` (requires a checkpoint directory) |
+# MAGIC | Betweenness | not computed in this notebook — written as NULL (the serving functions allow it) |
+# MAGIC | Louvain communities | true Louvain (same algorithm as notebook 06), fills `community_id` |
+# MAGIC | Connected components | persisted as `component_id` |
 # MAGIC
-# MAGIC ### Cluster requirement
-# MAGIC Run on a **Databricks ML runtime** cluster (e.g. `16.4.x-cpu-ml-scala2.12` —
-# MAGIC see `cluster_specs/classic_graphframes.json`): GraphFrames ships pre-installed
-# MAGIC there, no library install needed. Standard (non-ML) runtimes and serverless
-# MAGIC compute do not include it — use notebook 06 on those instead.
+# MAGIC ### Compute requirement
+# MAGIC Runs on **serverless** compute or any classic cluster. No ML runtime and no
+# MAGIC cluster library install are needed — the notebook installs the package with
+# MAGIC `%pip`. On serverless, each iterative step writes one Delta checkpoint per
+# MAGIC iteration, so runs take longer than on a fixed classic cluster.
 
 # COMMAND ----------
 
-try:
-    from graphframes import GraphFrame
-except ImportError as e:
-    raise ImportError(
-        "graphframes is not available on this cluster. Attach an ML runtime cluster "
-        "(cluster_specs/classic_graphframes.json) - GraphFrames ships pre-installed there. "
-        "On non-ML or serverless compute, use notebooks/06_graph_algorithms.py instead."
-    ) from e
+# MAGIC %pip install graphframes-serverless --quiet
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
+from graphframes_serverless import GraphFrame
 
 # COMMAND ----------
 
@@ -48,31 +54,28 @@ dbutils.widgets.text("schema", "knowledge_graph")
 dbutils.widgets.text("min_confidence", "0.0", "minimum triplet confidence to include (NULL confidence is kept)")
 dbutils.widgets.text("exclude_source_agents", "graph_topology,ml_clustering,statistical_analysis", "source_agents whose triplets are excluded from the input graph (comma-sep)")
 dbutils.widgets.text("pagerank_max_iter", "20", "fixed PageRank iterations")
-dbutils.widgets.text("lpa_max_iter", "10", "label-propagation iterations")
-dbutils.widgets.text("checkpoint_dir", "dbfs:/tmp/lakehouse_kg_gf_checkpoints", "checkpoint dir (required by connectedComponents)")
+dbutils.widgets.text("louvain_max_iter", "10", "Louvain local-moving iterations per level")
 
 CATALOG = dbutils.widgets.get("catalog").strip()
 SCHEMA = dbutils.widgets.get("schema").strip()
 MIN_CONFIDENCE = float(dbutils.widgets.get("min_confidence"))
 EXCLUDE_AGENTS = [a.strip() for a in dbutils.widgets.get("exclude_source_agents").split(",") if a.strip()]
 PAGERANK_MAX_ITER = int(dbutils.widgets.get("pagerank_max_iter"))
-LPA_MAX_ITER = int(dbutils.widgets.get("lpa_max_iter"))
-CHECKPOINT_DIR = dbutils.widgets.get("checkpoint_dir").strip()
+LOUVAIN_MAX_ITER = int(dbutils.widgets.get("louvain_max_iter"))
 
 FQ = CATALOG + "." + SCHEMA
 GT = FQ + ".gold_triplets"
 print("Input:  " + GT)
 print("Output: " + FQ + ".entity_centrality, " + FQ + ".entity_communities")
 
-spark.sparkContext.setCheckpointDir(CHECKPOINT_DIR)
-
 # COMMAND ----------
 
 # MAGIC %md ## 1. Build the vertex and edge DataFrames
 # MAGIC
-# MAGIC Same input contract as notebook 06: by default only *structural* triplets
-# MAGIC feed the algorithms (see the `exclude_source_agents` note there). Everything
-# MAGIC stays a distributed DataFrame — nothing is collected to the driver.
+# MAGIC This uses the same input contract as notebook 06: by default only
+# MAGIC *structural* triplets feed the algorithms (see the `exclude_source_agents`
+# MAGIC note there). Everything stays a distributed DataFrame. Nothing is collected
+# MAGIC to the driver.
 
 # COMMAND ----------
 
@@ -110,10 +113,9 @@ g = GraphFrame(vertices, edges)
 
 # COMMAND ----------
 
-pr = g.pageRank(resetProbability=0.15, maxIter=PAGERANK_MAX_ITER)
-pagerank_df = pr.vertices.select("id", "pagerank")
+pagerank_df = g.pageRank(resetProbability=0.15, maxIter=PAGERANK_MAX_ITER).vertices.select("id", "pagerank")
 
-# Undirected degree with mutual edges collapsed, matching notebook 06's semantics
+# Undirected degree with mutual edges collapsed, matching notebook 06's semantics.
 und_edges = edges.select(
     F.least("src", "dst").alias("a"), F.greatest("src", "dst").alias("b")
 ).distinct()
@@ -126,24 +128,29 @@ print("pagerank + degree computed")
 
 # COMMAND ----------
 
-# MAGIC %md ## 3. Label-propagation communities + connected components
+# MAGIC %md ## 3. Louvain communities + connected components
+# MAGIC
+# MAGIC GraphFrames Serverless computes true Louvain communities (the same
+# MAGIC algorithm as notebook 06), so `community_id` is directly comparable across
+# MAGIC the two notebooks.
 
 # COMMAND ----------
 
-lpa_df = g.labelPropagation(maxIter=LPA_MAX_ITER).select("id", F.col("label").alias("community_id"))
+louvain_df = g.louvain(maxIter=LOUVAIN_MAX_ITER).select("id", F.col("community").alias("community_id"))
 cc_df = g.connectedComponents().select("id", F.col("component").alias("component_id"))
 
-community_sizes = lpa_df.groupBy("community_id").agg(F.count("*").alias("community_size"))
+community_sizes = louvain_df.groupBy("community_id").agg(F.count("*").alias("community_size"))
 n_communities = community_sizes.count()
-print("label propagation: {:,} communities".format(n_communities))
+print("louvain: {:,} communities".format(n_communities))
 
 # COMMAND ----------
 
 # MAGIC %md ## 4. Write `entity_centrality` and `entity_communities`
 # MAGIC
-# MAGIC Identical schemas to notebooks 06/07. Betweenness has no GraphFrames
-# MAGIC implementation, so the column is written as NULL — `top_central_entities`
-# MAGIC and friends read pagerank/degree and tolerate it.
+# MAGIC The schemas are identical to notebooks 06 and 07. This notebook does not
+# MAGIC compute betweenness, so the column is written as NULL —
+# MAGIC `top_central_entities` and the other serving functions read
+# MAGIC pagerank/degree and allow it.
 
 # COMMAND ----------
 
@@ -162,7 +169,7 @@ centrality_df = (
 
 communities_df = (
     vertices
-    .join(lpa_df, "id", "left")
+    .join(louvain_df, "id", "left")
     .join(community_sizes, "community_id", "left")
     .join(cc_df, "id", "left")
     .select(

@@ -6,8 +6,8 @@
 # MAGIC `gold_triplets` grows past what the driver-side networkx path handles
 # MAGIC comfortably (~5M edges), cuGraph runs the same algorithms on GPU and scales
 # MAGIC to hundreds of millions of edges. It reads `gold_triplets` as the edge list
-# MAGIC and writes the **same two output tables** as notebook 06, so the serving UC
-# MAGIC functions (`sql/04_analytics_functions.sql`) work unchanged.
+# MAGIC and writes the **same two output tables** as notebooks 06 and 08, so the
+# MAGIC serving UC functions (`sql/04_analytics_functions.sql`) work unchanged.
 # MAGIC
 # MAGIC | Output table | Columns |
 # MAGIC |---|---|
